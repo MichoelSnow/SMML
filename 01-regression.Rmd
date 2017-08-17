@@ -1,0 +1,605 @@
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+library(tidyverse)
+library(lubridate)
+BlnkGrph = theme(axis.line=element_blank(), axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(), axis.title.x=element_blank(),
+                 axis.title.y=element_blank(), legend.position="none", panel.background=element_blank(), panel.border=element_blank(), panel.grid.major=element_blank(),
+                 panel.grid.minor=element_blank(), plot.background=element_blank(),plot.margin=grid::unit(c(0,0,0,0), "mm"))
+```
+
+
+
+# Simple Linear Regression {#sim-lin-reg}
+
+## Overview
+
+Almst all supervised models relate one or more input variables, $X_1,X_2, \ldots , X_p$, to an output variable, $Y$, which can be generalized as $$Y = f(X)$$ The goal of these models is to estimate the function $f(X)$ with as much accuracy as possible.  In a **linear regression** model, the assumption is that the input variables are related to the output variables through a linear combination, i.e., addition.  The term regression refers to the fact that the output variable can take on any value.  This is in contrast to classification models in which the output variable can take on one of a limited set of values.  Classification models will be discussed in chapter **NEED CHAPTER NAME**.  When the model is estimating the function for only a single input variable, it is termed simple linear regression and takes the form 
+
+\begin{equation} 
+  Y = a_0 + a_1X
+  (\#eq:SimpLinReg)
+\end{equation}
+
+This equation might seem somewhat familiar to you, and by just replacing the letters used for the terms and switching around the order I end up with an equation which we all have encountered in grade school as the equation for a line
+
+\begin{equation} 
+  y = mx + b
+\end{equation}
+
+Who knew we were all doing a form of linear regression so many years ago. Even though the letters used for simple linear regression are different they have the same meaning.  $a_0$ is the intercept and $a_1$ is the slope of the line.  However, unlike in math class where the line perfectly fit the points we were given, when dealing with data points in the real world this is almost never true.  This is the reason that I keep using the word estimate.  The model might be close but there should always be the expectation that it will not prefectly fit the data.  Additionally, if you try to perfectly fit the data you run the risk of overfitting your model, a topic which will be discussed in chapter **NEED CHAPTER NAME**.  So when discussing models applied to real world data the equation for simple linear regression is often written as
+
+\begin{equation} 
+  Y \approx a_0 + a_1 X
+  (\#eq:SimpLinRegapprox)
+\end{equation}
+
+To understand why equation \@ref(eq:SimpLinRegapprox) is more appropriate than equation \@ref(eq:SimpLinReg), let's look at some data.  Plotted in the figure below are average temperature readings at JFK airport from January through July of 2017.   
+
+
+```{r, fig.align='center',  echo=FALSE}
+temp <- read_csv("./data/jfk_tmp.csv")
+temp <- temp %>% mutate(DATE=ymd(DATE)) %>% filter(DATE > '2017-01-01')
+temp %>% ggplot(aes(DATE,TAVG)) + geom_point() + labs(x="Date", y="Average Temperature (F)")
+```
+
+Using the least squares method described below I can estimate the linear regression coefficients and overlay the best fit line.
+
+```{r, fig.align='center',  echo=FALSE}
+fit <- lm(TAVG~DATE,data=temp)
+temp <- temp %>% mutate(tfit = predict(fit,data.frame(DATE=temp$DATE)))
+temp %>% ggplot(aes(DATE,TAVG)) + geom_point() + geom_line(aes(DATE,tfit)) + labs(x="Date", y="Average Temperature (F)")
+```
+
+You can see that there is no straight line which would hit all the points, so going back to my original assertion, even the most accurate model could only approximate the output variable given the input variables.  
+
+Taking another step back, we have to remember that linear regression is a method of estimating the efficients of equation \@ref(eq:SimpLinRegapprox), which I can represent by giving the estimated coefficients and estimate output variables tiny hats.
+
+\begin{equation} 
+  \hat{Y} = \hat{a}_0 + \hat{a}_1 X
+  (\#eq:SimpLinRegHat)
+\end{equation}
+
+
+
+## Estimating the Coefficients
+
+### Least squares
+
+The general idea of the least squares method is that you want to pick coefficents which minimize the differences between the given output and the output calculated from the right hand side of equation \@ref(eq:SimpLinRegHat).  This difference between the calculated output variable and the actual output variable is called the **residual** which is represented by the symbol $e$. 
+
+\begin{equation}
+  e = Y-\hat{Y} = Y - \left(\hat{a}_0  + \hat{a}_1 X\right)
+  (\#eq:resid)
+\end{equation}
+
+The residuals in our previous plot are the distances from the points to the fitted line.
+
+```{r, fig.align='center',  echo=FALSE}
+temp %>% ggplot(aes(DATE,TAVG)) + geom_point() + geom_line(aes(DATE,tfit)) + geom_segment(aes(x=DATE,xend=DATE,y=TAVG,yend=tfit), color='red') + labs(x="Date", y="Average Temperature (F)")
+```
+
+If I then take the square of the residual for each observation and sum them all together I get the **residual sum of squares (RSS)**.  Minimizing the RSS is what makes this process "least squares".
+
+\begin{equation}
+  RSS = e_1^2 + e_2^2 + \ldots + e_n^2 = \sum\limits_{i=1}^N e_i^2   
+  (\#eq:RSS)
+\end{equation}  
+
+
+$e_i$ represents the $i$th residual and refers to the difference between the $i$th actual output, $Y_i$, and the $i$th predicted output, $\hat{Y}_i$.  In the following section I am going to go, step by step, through two different methods of deriving the least squares coefficients.  I find derivations useful for two reaons.  The first is that they let you know where the equations come from.  If you are reading this book then you are looking to understand modeling on a level deeper than simply, "how do I apply a certain model to my data".  The second reason that I like derivations is that you see the assumptions made in the derivations.  This, in my opinion, is essential to being able to smartly use the different models, as you understand when the assumptions are valid and when they are not.
+
+There are multiple methods to solve for the minimum least squares coefficients, most dealing with variations on ordinary least squares using matrix algebra.  I will be using matrix algebra to solve for the coefficients when there are multiple inputs but for simple linear regression the following derivation only requires knowledge of partial derivatives.
+
+
+
+#### Derivation 1 {-}
+
+Before I start working through the derivation, there are two concepts I want to go through variance and covariance.  The reason being that at the end of the derivation the estimate of slope, otherwise known as $a_1$ can be calculated by dividing the covariance by the variance.  When I get to that point I will discuss why this is the case, but I first wanted to make sure that you had a firm grasp on these concepts by themselves.  Also, the in depth examination of variance will inform later parts of the derivation.
+
+The **variance** is a measure of spread for a variable, i.e., the distance of each value from the sample mean value.  An intuitive example is shown below where the variance of the points on the targets increases from left to right.
+
+```{r,fig.align='center',  echo=FALSE,message=FALSE}
+circleFun <- function(center = c(0,0),diameter = 1, npoints = 100){
+    r = diameter / 2
+    tt <- seq(0,2*pi,length.out = npoints)
+    xx <- center[1] + r * cos(tt)
+    yy <- center[2] + r * sin(tt)
+    return(data.frame(x = xx, y = yy))
+}
+dat1_1 <- circleFun(c(0,0),0.5,npoints = 100)
+dat1_2 <- circleFun(c(0,0),1,npoints = 100)
+dat1_3 <- circleFun(c(0,0),1.5,npoints = 100)
+dat2_1 <- circleFun(c(2,0),0.5,npoints = 100)
+dat2_2 <- circleFun(c(2,0),1,npoints = 100)
+dat2_3 <- circleFun(c(2,0),1.5,npoints = 100)
+dat3_1 <- circleFun(c(4,0),0.5,npoints = 100)
+dat3_2 <- circleFun(c(4,0),1,npoints = 100)
+dat3_3 <- circleFun(c(4,0),1.5,npoints = 100)
+var_pt <- tibble(x1=runif(30,-0.2,0.2),y1=runif(30,-0.2,0.2),
+                 x2=runif(30,1.55,2.35),y2=runif(30,-0.4,0.4),
+                 x3=runif(30,3.4,4.6),y3=runif(30,-0.57,0.57))
+circ1 <- tibble(x1=dat1_1$x,y1=dat1_1$y,x2=dat1_2$x,y2=dat1_2$y,x3=dat1_3$x,y3=dat1_3$y,
+                x4=dat2_1$x,y4=dat2_1$y,x5=dat2_2$x,y5=dat2_2$y,x6=dat2_3$x,y6=dat2_3$y,
+                x7=dat3_1$x,y7=dat3_1$y,x8=dat3_2$x,y8=dat3_2$y,x9=dat3_3$x,y9=dat3_3$y)
+#geom_path will do open circles, geom_polygon will do filled circles
+ggplot(circ1) + geom_path(aes(x1,y1)) + 
+  geom_path(aes(x2,y2)) +
+  geom_path(aes(x3,y3)) +
+  geom_path(aes(x4,y4)) + 
+  geom_path(aes(x5,y5)) +
+  geom_path(aes(x6,y6)) +
+  geom_path(aes(x7,y7)) + 
+  geom_path(aes(x8,y8)) +
+  geom_path(aes(x9,y9)) +
+  geom_point(data=var_pt,aes(x1,y1)) + 
+  geom_point(data=var_pt,aes(x2,y2)) + 
+  geom_point(data=var_pt,aes(x3,y3)) + 
+  BlnkGrph + coord_fixed()
+  
+```
+
+Mathematically the variance, in one dimension, is calculated as follows:
+
+\begin{equation}
+  Var(x) = \sigma^2 = \frac{1}{N}\sum\limits_{i=1}^N \left(x_i - \mu\right)\left(x_i - \mu\right)  = \frac{1}{N}\sum\limits_{i=1}^N \left(x_i - \mu\right)^2 
+  (\#eq:PopVarDisc)
+\end{equation}
+
+Where $\mu_x$ is the notation for the population mean value of x, which is discussed in the next paragraph.  Squaring the difference serves two functions, the first is to equally weight positive and negative contributions to the variance.  Without the square if a variable was evenly  distributed around zero, regardless of its spread it would have a variance of zero.  The second consequence is that as the distances increase the variance increases exponentially, as seen in the following graph:
+
+
+
+```{r, fig.align='center',  echo=FALSE,message=FALSE}
+# var_1d <- tibble(x1=runif(30,-1,1),x2=runif(30,-2,2),x3=runif(30,-3,3),
+#        y1=rep(1,30),y2=rep(3,30),y3=rep(5,30))
+ct=30
+x1 <- runif(ct,-2,2)
+x2 <- runif(ct,-4,4)
+x3 <- runif(ct,-8,8)
+var_1d <- tibble(x=c(x1,x2,x3),
+                 y=c(rep(5,ct),rep(3,ct),rep(1,ct)),
+                 Variances=c(rep("x1",ct),rep("x2",ct),rep("x3",ct)))
+ggplot(var_1d) + geom_point(aes(x,y,color=Variances),size=2) +
+  scale_color_discrete(labels=c(round(var(x1),2),round(var(x2),2),round(var(x3),2)))
+```
+
+However, there is a problem with using equation \@ref(eq:PopVarDisc), it requires that I already know the population mean.  The **population mean** is the mean value given a set of numbers or values.  The issue is that most of the time with data we are dealing with a small subsample of data and not the full set of data.  For example, if I wanted to calculate the average rainfall in New York City yesterday, I would need to measure the rainfall in every location throughout the city.  This is obviously impossible, which is why some people refer to the population mean as the omniscient mean.  Instead, what I can do is measure the rainfall at certain points throughout the city and estimate the population mean using the **sample mean**, which is simply the mean calculated from the population sample collected.  The difference between population mean and sample mean, might seem like simply a matter of semantics, but it has important ramifications and necessitates corrections.  The variance using the sample mean, termed the sample variance, very similar to 
+
+
+\begin{equation}
+  Var(\bar{x}) = s^2 = \frac{1}{N-1}\sum\limits_{i=1}^N \left(x_i - \bar{x}\right)\left(x_i - \bar{x}\right)  = \frac{1}{N-1}\sum\limits_{i=1}^N \left(x_i - \bar{x}\right)^2 
+  (\#eq:SmpVarDisc)
+\end{equation}
+
+where $s^2$ is the sample variance and $\bar{x}$ is the sample mean.  For a full derivation of equation \@ref(eq:SmpVarDisc) see [Population Vs. Sample Variances](#pop-vs-smp-var).
+
+
+Unlike the variance which is a measure of how a single variable varies with regards to itself, the **covariance** is a measure of how two variables, $\mathbf{X}$ and $\mathbf{Y}$, vary with respect to each other.  If the variables increase in value together and decrease together, i.e., when one variable increases the other variable increases as well, the covariance will be larger.  If instead one variable increases while the other decreases then the covariance will be smaller.  To actually calculate the covariance you can use the following formula:
+
+\begin{equation}
+  Cov(x) = \frac{1}{N}\sum\limits_{i=1}^N \left(x_i - \mu_x\right)\left(y_i - \mu_y\right)
+  (\#eq:PopCovDisc)
+\end{equation}
+
+If equation \@ref(eq:PopCovDisc) looks suspiciously like equation \@ref(eq:PopVarDisc), that's because the formula for the variance is just a special case of the formula for the covariance when dealing with a single variable.  To get an intuitive sense of what the covariance represents here are the covariances for a few different series of points.
+
+```{r, fig.align='center',  echo=FALSE,message=FALSE}
+# var_1d <- tibble(x1=runif(30,-1,1),x2=runif(30,-2,2),x3=runif(30,-3,3),
+#        y1=rep(1,30),y2=rep(3,30),y3=rep(5,30))
+ct=50
+
+x1 <- sort(runif(ct,-20,10))
+x2 <- sort(runif(ct,20,35))
+x3 <- sort(runif(ct,45,48))
+x4 <- sort(runif(ct,58,89),decreasing = TRUE)
+y1 <- sort(runif(ct,-10,10))
+y2 <- sort(runif(ct,-10,10))
+y3 <- sort(runif(ct,-10,10))
+y4 <- sort(runif(ct,-10,10))
+var_2d <- tibble(x=c(x1,x2,x3,x4),
+                 y=c(y1,y2,y2,y4),
+                 Covariances=c(rep("x1y1",ct),rep("x2y2",ct),rep("x3y3",ct),rep("x4y4",ct)))
+ggplot(var_2d) + geom_point(aes(x,y,color=Covariances),size=2) +
+  scale_color_discrete(labels=c(round(cov(x1,y1),2),round(cov(x2,y2),2),round(cov(x3,y3),2),round(cov(x4,y4),2)))
+```
+
+As you can see, as the slope of the line increases from the red to the green to the blue points, the covariance decreases. This is because for the red points, a change in $y$ value of 5 roughly corresponds to a change in $x$ value of 7 or 8, but for the green points, the same change in $y$ of 5 corresponds to a change in $x$ of only about 3 or 4.  What this means is that for an increased slope the $x$ values are changing at a slower rate and so this decreases their term in the covariance formulation.  The purple points on the right show what happens to the covariance when the tyhe two variables move in opposite direction. The magnitutde is the same for the purple and red points, but while the red covariance is positive the purple is negative.  This is because, with respect to each variable's mean value, while $x$ is positive, $y$ is negative and vice versa. 
+
+Just like with the variance, I have to distinguish between the population covariance, equation \@ref(eq:PopCovDisc), and the sample covariance:
+
+
+\begin{equation}
+  Cov(x) = \frac{1}{N-1}\sum\limits_{i=1}^N \left(x_i - \bar{x}\right)\left(y_i - \bar{y}\right)
+  (\#eq:SmpCovDisc)
+\end{equation}
+
+The main difference once again is the replacement of $n-1$ in the denominator in lieu of $n$, for the same reason as the variance.
+
+Now that I have gone over the concepts of variance and covariance, I just need to go over some quick identities before I derive the least squares coefficients.
+
+\begin{equation}
+\begin{split}
+  \frac{1}{N}\sum\limits_{i=1}^N y_i & = \bar{y} \Longleftrightarrow \sum\limits_{i=1}^N y_i & = N\bar{y} \\
+  \frac{1}{N}\sum\limits_{i=1}^N x_i & = \bar{x} \Longleftrightarrow \sum\limits_{i=1}^N x_i & = N\bar{x} \\
+\end{split}
+(\#eq:SumMn)
+\end{equation}
+
+Equation \@ref(eq:SumMn) is just a simple variation on the definition of $\bar{X}$.  The next two sets of identities are expansions of the variance and covariance equations and the equivalent ways they appear.  I am going to be removing the denominator for the sake of simplicity, also because as you will soon see it will be divided out in the final derivation.
+
+
+\begin{align}
+  \sum\limits_{i=1}^N (x_i-\bar{x})(x_i - \bar{x}) &= \sum\limits_{i=1}^N x_i^2 - 2\sum\limits_{i=1}^N \bar{x}x_i + \sum\limits_{i=1}^N \bar{x}^2 \\
+  &= \sum\limits_{i=1}^N x_i^2 - 2N\bar{x}^2 + N\bar{x}^2 \\
+  &= \sum\limits_{i=1}^N x_i^2 - \sum\limits_{i=1}^N  \bar{x}x_i = \sum\limits_{i=1}^N x_i\left(x_i-\bar{x}\right) (\#eq:VarEq)
+\end{align}
+
+Now repeating the process for the covariance:
+
+
+\begin{align}
+  \sum\limits_{i=1}^N (x_i-\bar{x})(y_i - \bar{y}) &= \sum\limits_{i=1}^N x_iy_i - \sum\limits_{i=1}^N \bar{x}y_i - \sum\limits_{i=1}^N \bar{y}x_i + \sum\limits_{i=1}^N\bar{x}\bar{y}\\
+  &=\sum\limits_{i=1}^N x_iy_i - \bar{x}\sum\limits_{i=1}^N y_i - \bar{y} \sum\limits_{i=1}^N x_i + \bar{x}\bar{y}\sum\limits_{i=1}^N 1 \\
+  &=\sum\limits_{i=1}^N x_iy_i -N\bar{x}\bar{y} - N\bar{x}\bar{y} + N\bar{x}\bar{y} \\
+  &=\sum\limits_{i=1}^N x_iy_i - N\bar{x}\bar{y} \\
+  &=\sum\limits_{i=1}^N x_iy_i - \sum\limits_{i=1}^N \bar{y}x_i = \sum\limits_{i=1}^N x_i\left(y_i - \bar{y}\right) (\#eq:CovEq1)\\
+  &= \sum\limits_{i=1}^N x_iy_i - \sum\limits_{i=1}^N \bar{x}y_i = \sum\limits_{i=1}^N y_i\left(x_i - \bar{x}\right) (\#eq:CovEq2)\\
+\end{align}
+
+This series of equations is simply going back and forth between equivalent values using the relationships established in equation \@ref(eq:SumMn).  I can split and rejoin summations because the operations are all linear.  At the end of the above series I end up with two relationships which will be needed later.  
+
+Now with all these tools, let's attack this derivation.  If you remember back from your high school and college math classes, when we are trying to find the minimum value of a function we take the derivative, set it equal to zero and solve for the parameter(s) of interest.  Thankfully, the process hasn't changed since then.  Also, since there are multiple parameters of interest, i.e., $\hat{a_0}$ and $\hat{a_1}$, I will need to use partial derivatives.  First I want to rewrite equation \@ref(eq:RSS) in a slightly more derivative friendly way.
+
+\begin{equation}
+  S = \sum\limits_{i=1}^N \left(y_i - \hat{a}_0  + \hat{a}_1 x_i \right)^2   
+  (\#eq:RSSDer)
+\end{equation} 
+
+Starting with $\hat{a_0}$
+
+\begin{align}
+  \frac{\partial S}{\partial \hat{a}_0} = -2 &\sum\limits_{i=1}^N \left(y_i - \hat{a}_0 - \hat{a_1}x_i\right)\\
+  &\sum\limits_{i=1}^N \left(y_i - \hat{a}_0 - \hat{a_1}x_i\right) = 0 \\
+  &\sum\limits_{i=1}^N y_i - \hat{a}_0 \sum\limits_{i=1}^N 1 - \hat{a_1} \sum\limits_{i=1}^N x_i = 0 \\
+  & N\bar{y} - N\hat{a}_0  - N\hat{a_1}\bar{x}  = 0 \\
+  & \bar{y} - \hat{a}_0  - \hat{a_1}\bar{x}  = 0 \\
+  & \hat{a}_0 = \bar{y} - \hat{a_1}\bar{x}  (\#eq:a0Deriv)
+\end{align}
+
+The outcome all these steps is something that seems relatively simple, that the estimate of the intercept is just based on the estimated slope and the average input and output values.  That being said it does make sense, as the intercept serves to horizontally shift the line.  Once we have estimated the slope we want an intercept which positions the resulting line to go through the center of data as calculated by the average position.  Now that I have estimated $\hat{a}_0$, I can estimate $\hat{a}_1$
+
+
+
+\begin{align}
+  \frac{\partial S}{\partial \hat{a}_1} = -2 &\sum\limits_{i=1}^N x_i \left(y_i - \hat{a}_0 - \hat{a_1}x_i\right)\\
+  &\sum\limits_{i=1}^N x_i \left(y_i - \hat{a}_0 - \hat{a_1}x_i\right) = 0 \\
+  &\sum\limits_{i=1}^N x_iy_i - \hat{a}_0 \sum\limits_{i=1}^N x_i - \hat{a_1} \sum\limits_{i=1}^N x_i^2 = 0 \\
+  &\sum\limits_{i=1}^N x_iy_i = \hat{a}_0 \sum\limits_{i=1}^N x_i + \hat{a_1} \sum\limits_{i=1}^N x_i^2 \\
+  &\sum\limits_{i=1}^N x_iy_i = N\hat{a}_0 \bar{x} + \hat{a_1} \sum\limits_{i=1}^N x_i^2 \\
+  &\sum\limits_{i=1}^N x_iy_i = N\left(\bar{y} - \hat{a_1}\bar{x}\right)\bar{x} + \hat{a_1} \sum\limits_{i=1}^N x_i^2 \\
+  &\sum\limits_{i=1}^N x_iy_i = N\bar{y}\bar{x} - N\hat{a_1}\bar{x}^2 + \hat{a_1} \sum\limits_{i=1}^N x_i^2 \\
+  &\sum\limits_{i=1}^N x_iy_i = \sum\limits_{i=1}^N y_i \bar{x} - \hat{a_1}\sum\limits_{i=1}^N x_i \bar{x} + \hat{a_1} \sum\limits_{i=1}^N x_i^2 \\
+  &\sum\limits_{i=1}^N x_iy_i - \sum\limits_{i=1}^N y_i \bar{x} =  \hat{a_1} \sum\limits_{i=1}^N x_i^2 - \hat{a_1}\sum\limits_{i=1}^N x_i \bar{x} \\
+  &\sum\limits_{i=1}^N y_i\left(x_i - \bar{x}\right) = \hat{a_1}\sum\limits_{i=1}^N x_i \left(x_i - \bar{x}\right) \\
+  &\sum\limits_{i=1}^N \left(x_i-\bar{x}\right)\left(y_i-\bar{y}\right) = \hat{a_1}\sum\limits_{i=1}^N \left(x_i - \bar{x}\right)^2 \\
+  &\hat{a_1} = \frac{\sum\limits_{i=1}^N \left(x_i-\bar{x}\right)\left(y_i-\bar{y}\right)}{\sum\limits_{i=1}^N \left(x_i - \bar{x}\right)^2} \\
+  &\hat{a_1} = \frac{Cov\left(\mathbf{X},\mathbf{Y}\right)}{Var\left(\mathbf{X}\right)} (\#eq:a1Deriv)
+\end{align}
+
+The fact that the estimate of $\hat{a}_1$ is the covariance divided by the variance seems like a very interesting result, but why is that the case?  If the covariance is the degree to which two variables vary with each other and the variance is the degree to which a single varialbe varies than the ratio of the covariance to the variance is the degree to which two variables vary reduced by the degree to which the input variable varies within itself.  If you think back to our discussion of covariance, as the slop increases the covariance decreases, because there is less variation within the input variable, but if we divide by the variance of the input variable this should correct for that diminishing covariance.  The following graph calculates the covariance, variance and their ratio for three sets of data points.
+
+
+```{r, fig.align='center',  echo=FALSE,message=FALSE}
+
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+n = 3
+cols = gg_color_hue(n)
+ct=100
+
+x1 <- sort(runif(ct,-20,-5))
+y1 <- sort(runif(ct,-10,10))
+x2 <- sort(runif(ct,-20,10))
+y2 <- sort(runif(ct,-10,10))
+x3 <- sort(runif(ct,-20,50))
+y3 <- sort(runif(ct,-10,10))
+var_2d <- tibble(x=c(x1,x2,x3),
+                 y=c(y1,y2,y3),
+                 Covariances=c(rep("x1y1",ct),rep("x2y2",ct),rep("x3y3",ct)))
+ggplot(var_2d) + geom_point(aes(x,y,color=Covariances),size=2) +
+  theme(legend.position="none") +
+  # scale_color_discrete(labels=c(round(cov(x1,y1),2),round(cov(x2,y2),2))) +
+  annotate("text", x = c(-18,-12), y = c(10,10), label =  c("paste(Cov, \" =  \")" , round(cov(x1,y1),2)), parse = TRUE ,color=cols[1]) +
+  annotate("text", x = c(-18,-12), y = c(8.5,8.5), label =  c("paste(Var, \" =  \")" , round(var(x1),2)), parse = TRUE ,color=cols[1]) +
+  annotate("text", x = c(-18,-12), y = c(7,7), label =  c("paste(Cov/Var, \" =  \")" , round(cov(x1,y1)/var(x1),2)), parse = TRUE ,color=cols[1]) +
+  annotate("text", x = c(12,18), y = c(8,8), label =  c("paste(Cov, \" =  \")" , round(cov(x2,y2),2)), parse = TRUE ,color=cols[2]) +
+  annotate("text", x = c(12,18), y = c(6.5,6.5), label =  c("paste(Var, \" =  \")" , round(var(x2),2)), parse = TRUE ,color=cols[2]) +
+  annotate("text", x = c(12,18), y = c(5,5), label =  c("paste(Cov/Var, \" =  \")" , round(cov(x2,y2)/var(x2),2)), parse = TRUE ,color=cols[2]) +
+  annotate("text", x = c(14,20), y = c(-4,-4), label =  c("paste(Cov, \" =  \")" , round(cov(x3,y3),2)), parse = TRUE ,color=cols[3]) +
+  annotate("text", x = c(14,20), y = c(-5.5,-5.5), label =  c("paste(Var, \" =  \")" , round(var(x3),2)), parse = TRUE ,color=cols[3]) +
+  annotate("text", x = c(14,20), y = c(-7,-7), label =  c("paste(Cov/Var, \" =  \")" , round(cov(x3,y3)/var(x3),2)), parse = TRUE ,color=cols[3]) 
+```
+
+You can see that as the slop decreases both the covariance and variance increase, but since the covariance is only increasing linearly, while the variance is increasing exponentially, the overall ratio decreases.  
+
+
+Putting these two estimates together I can now perform the least squares estimation of simple linear regression.  The following plot demonstrates the least squares fit for three sets of points.  The code to run this model is discussed below in the section **NEED SECTION NAME**
+
+
+
+
+```{r, fig.align='center',  echo=FALSE,message=FALSE}
+ct = 50
+x1 <- sort(runif(ct,-20,-5))
+y1 <- sort(runif(ct,-10,10))
+x2 <- sort(runif(ct,-20,10))
+y2 <- sort(runif(ct,-10,10))
+x3 <- sort(runif(ct,-20,50))
+y3 <- sort(runif(ct,-10,10))
+
+var_2d <- tibble(x=c(x1,x2,x3),
+                 y=c(y1,y2,y3),
+                 Covariances=c(rep("x1y1",ct),rep("x2y2",ct),rep("x3y3",ct)))
+
+
+ggplot(var_2d,aes(x,y,color=Covariances)) + geom_point() +
+  geom_smooth(method=lm,se=FALSE) +
+  theme(legend.position="none")
+
+```
+
+
+
+
+
+## Model Accuracy
+
+### Accuracy of the Coefficients
+
+While the ability to estimate the coefficients is very powerful, the question is how accurate is the estimation given the data points.  You can see from equations \@ref(eq:a0Deriv) and \@ref(eq:a1Deriv) that the least squares method of linear regression will always give an estimate, but with what confidence can we rely on that estimate? One metric commonly used is the **standard error**, which is the standard deviation of the sampling distribution.  This is not the regular standard deviation which you might be used to.  The **standard deviation** is the degree to which sample vary about the mean and mathematically is the square root of the variance.  The standard error is the variation of the sample mean from the population mean, in other words, how close the sample mean is to the true population mean.  To get an intuitive understanding of what I mean by variation of the sample mean, I am going to calculate the mean of different size samples drawn from a population of one hundred thousand points. 
+
+
+
+```{r, eval=FALSE,echo=FALSE, fig.align='center'}
+hun_thou <- runif(10^5,-10,10)
+
+x1 <- c()
+x2 <- c()
+x3 <- c()
+rpts = 20
+for(i in 1:rpts){
+  x1 <- c(x1,mean(sample(hun_thou,100)))
+  x2 <- c(x2,mean(sample(hun_thou,1000)))
+  x3 <- c(x3,mean(sample(hun_thou,10000)))
+}
+
+smpl_mn <- tibble(x = c(x3,x2,x1),
+                  y=c(rep(1,rpts),rep(2,rpts),rep(3,rpts)),
+                  PointCount=c(rep("10%",rpts),rep("1%",rpts),rep("0.1%",rpts)))
+ggplot(smpl_mn,aes(x,y,color=PointCount)) + geom_point(size=2) +
+  guides(color=guide_legend(title="Sample Size"))
+
+```
+
+
+The standard error, in this case specifically the standard error of the mean, is the standard deviation of each set of colored points.  Given a population of one hundred thousand data points you can see that the sample size has a large impact on the standard deviation of the sample mean.  The greater percentage of points from the population that are used in the sample, the narrower the range of sample means.  Just like the standard deviation is the square root of the population variance of the population, so too the standard error is the square root of the sample variance.
+
+\begin{align}
+  SE(\bar{x})  &= \sqrt{Var(\bar{x})} = \sqrt{s^2} \\
+  &= \sqrt{\frac{1}{N-1}\sum\limits_{i=1}^N \left(x_i - \bar{x}\right)^2} 
+  (\#eq:StdErrMn)
+\end{align}
+
+<!-- \begin{align} -->
+<!--   SE(\bar{x}) &= \sqrt{Var(\bar{x})} \\ -->
+<!--   &= \sqrt{Var\left(\frac{x_1 + x_2 + \ldots + x_n}{n}\right)} \\ -->
+<!--   &= \sqrt{\frac{1}{n^2}\left(Var(x_1) + Var(x_2) + \ldots + Var(x_n)\right)} \\ -->
+<!--   &= \sqrt{\frac{1}{n^2}\left(\sigma^2 + \sigma^2 + \ldots + \sigma^2\right)} \\ -->
+<!--   &= \sqrt{\frac{1}{n^2}n\sigma^2} \\ -->
+<!--   &= \sqrt{\frac{\sigma^2}{n}} \\ -->
+<!--   &= \frac{\sigma}{\sqrt{n}} (\#eq:StdErrMn) -->
+<!-- \end{align} -->
+
+As matches the graphical intuition, the larger the sample size the smaller the standard error of the sample mean. Given that sampling and sample size affects the mean, we can expect that they should affect our coefficient estimates.  Similar to the previous graph, I can estimates the coefficients of multiple sample sets all drawn from a single linear distribution.
+
+```{r,fig.align='center',  echo=FALSE,message=FALSE}
+
+pop_sz <- 300
+x2 <- sort(runif(pop_sz,-50,50))
+y2 <- x2+rnorm(pop_sz,sd=10)
+pop_var <- tibble(x=x2,y=y2)
+fit <- lm(y2~x2)
+pop_fit <- tibble(slp_pop = coef(summary(fit))["x2","Estimate"],
+                  int_pop = coef(summary(fit))["(Intercept)","Estimate"])
+
+rpts <- 7
+smp_sz <- 5
+slp_coef <- c()
+int_coef <- c()
+for(i in 1:rpts){
+  smp_pos <- sample(pop_sz,smp_sz)
+  x3 <- x2[smp_pos]
+  y3 <- y2[smp_pos]
+  fit <- lm(y3~x3)
+  slp_coef <- c(slp_coef,coef(summary(fit))["x3","Estimate"])
+  int_coef <- c(int_coef,coef(summary(fit))["(Intercept)","Estimate"])
+}  
+  smp_fit <- tibble(slp_coef,int_coef)
+
+
+ggplot(pop_var,aes(x,y)) + 
+  geom_point() +
+  geom_abline(data=smp_fit,aes(slope=slp_coef,intercept=int_coef),color="blue") +
+  geom_abline(data=pop_fit,aes(slope=slp_pop,intercept=int_pop),color="red",size=2) 
+  
+```
+
+
+
+
+
+
+How can we use this information to estimate the standard error
+
+
+
+```{r, eval=FALSE,echo=FALSE}
+one_thou <- runif(10^3,-10,10)
+ten_thou <- runif(10^4,-10,10)
+hun_thou <- runif(10^5,-10,10)
+
+x1 <- c()
+x2 <- c()
+x3 <- c()
+rpts = 20
+for(i in 1:rpts){
+  x1 <- c(x1,mean(sample(one_thou,100)))
+  x2 <- c(x2,mean(sample(ten_thou,100)))
+  x3 <- c(x3,mean(sample(hun_thou,100)))
+}
+
+smpl_mn <- tibble(x = c(x3,x2,x1),
+                  y=c(rep(1,rpts),rep(2,rpts),rep(3,rpts)),
+                  PointCount=c(rep("100,000 points",rpts),rep("10,000 points ",rpts),rep("1,000 points",rpts)))
+ggplot(smpl_mn,aes(x,y,color=PointCount)) + geom_point(size=2)
+
+```
+
+
+```{r, fig.align='center',  echo=FALSE,message=FALSE,eval=FALSE}
+
+ten_thou <- runif(10^4,-10,10)
+x1 <- c()
+rpts = 15
+for(i in 1:rpts){
+  x1 <- c(x1,mean(sample(ten_thou,100)))
+}
+smpl_mn <- tibble(x = x1,
+                  y=c(rep(1,rpts)))
+ggplot(smpl_mn,aes(x,y,color=y)) + 
+  geom_point(size=5,color="black",shape=21,fill="lightblue") +
+  theme(legend.position="none") +
+  xlim(-1.5,1.5)
+
+```
+
+
+
+
+
+
+```{r TmpPnt, fig.align='center',  echo=FALSE,message=FALSE,eval=FALSE}
+library(tidyverse)
+cel <-  sort(sample(seq(-50,100),15))
+frn <- 9/5*cel + 32 
+frn2 <- frn + rnorm(length(cel))*15
+err <- round(frn2-frn,1)
+tmp <- tibble(cel,frn,frn2,err)
+gplot <- ggplot(tmp,aes(cel,frn2))  + geom_point() + labs(x="Temp (C)", y= "Temp (F)")
+gplot
+```
+
+
+```{r TmpLin, fig.align='center',  echo=FALSE,message=FALSE,eval=FALSE}
+
+gplot + geom_line(aes(cel,frn)) + geom_segment(aes(x=cel,xend=cel,y=frn2,yend=frn), color='red')
+```
+
+
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+ 
+
+<!-- The red bars from the points to the line represent the distance from the real values to the measured values, also know as the error.  So I can rewrite Equation \@ref(eq:SimpLinReg) in one of two ways to be accurate.  The first is to include an error term, $\epsilon$ by standard notation, whose values are the lengths of the individual red lines.   -->
+
+<!-- \begin{equation}  -->
+<!--   Y = a_0 + a_1 \cdot X_1 + \epsilon -->
+<!--   (\#eq:SimpLinRegErr) -->
+<!-- \end{equation}  -->
+
+<!-- $\epsilon$ is a variable with the same number of values as $X$ and $Y$, as seen in the table below -->
+
+```{r, echo=FALSE,eval=FALSE}
+library(knitr)
+# kable(tmp[,c('cel','frn','err')],col.names = c('Celsius', 'Farenheit', 'Error'),align='lll', booktabs = TRUE)
+kable(head(tmp),col.names = c('Celsius', 'Farenheit (actual)', 'Farenheit (recorded)', 'Error'),align='lll', digits=1)
+```
+
+
+
+
+When more input variables are added the simple part of the term is dropped and it is referred to as general regression and takes the form
+
+\begin{equation} 
+  Y = a_0 + a_1\cdot X_1 + a_2\cdot X_2 + \ldots a_p\cdot X_p + \epsilon = a_0 + \sum\limits_{i=1}^p(a_i\cdot X_i) + \epsilon
+  (\#eq:LinReg)
+\end{equation} 
+
+Just as in simple linear regression, the $a$'s in front of the input variables control the slope of the line, $a_0$ controls the intercept of the line.  Taken together the $a$'s are referred to as the coefficients. $\epsilon$ is the error as measured by the distance from the points on the right hand side to the true values on the left hand side of the equation.
+
+
+Going back to our original simple linear regression problem involving temperature measurments.  Since we know that the relationship between the input and output variables is not strictly goverened by the equation $F = \dfrac{9}{5}\cdot C + 32$, we need a method of determining the coefficients which actually govern the relationship between our given input and outputs.
+
+
+
+
+
+
+
+
+
+## Variable parameters
+
+The values of the input and output parameters in a linear regression model are as follows.
+- Input Values can be any of the following
+    - numerical values, also referred to as quantitative values
+    - Dummy va
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+You can label chapter and section titles using `{#label}` after them, e.g., we can reference Chapter \@ref(intro). If you do not manually label them, there will be automatic labels anyway, e.g., Chapter \@ref(methods).
+
+Figures and tables with captions will be placed in `figure` and `table` environments, respectively.
+
+```{r nice-fig, fig.cap='Here is a nice figure!', out.width='80%', fig.asp=.75, fig.align='center',eval=FALSE,echo=FALSE}
+par(mar = c(4, 4, .1, .1))
+plot(pressure, type = 'b', pch = 19)
+```
+
+Reference a figure by its code chunk label with the `fig:` prefix, e.g., see Figure \@ref(fig:nice-fig). Similarly, you can reference tables generated from `knitr::kable()`, e.g., see Table \@ref(tab:nice-tab).
+
+```{r nice-tab, tidy=FALSE,eval=FALSE,echo=FALSE}
+knitr::kable(
+  head(iris, 20), caption = 'Here is a nice table!',
+  booktabs = TRUE
+)
+```
+
+You can write citations, too. For example, we are using the **bookdown** package [@R-bookdown] in this sample book, which was built on top of R Markdown and **knitr** [@xie2015].
