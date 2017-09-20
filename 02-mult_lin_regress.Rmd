@@ -1,0 +1,132 @@
+```{r, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+library(tidyverse)
+library(lubridate)
+library(grid)
+library(gridExtra)
+library(plotly)
+BlnkGrph = theme(axis.line=element_blank(), axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(), axis.title.x=element_blank(),
+                 axis.title.y=element_blank(), legend.position="none", panel.background=element_blank(), panel.border=element_blank(), panel.grid.major=element_blank(),
+                 panel.grid.minor=element_blank(), plot.background=element_blank(),plot.margin=grid::unit(c(0,0,0,0), "mm"))
+```
+
+
+
+# Multiple Linear Regression {#mult-lin-reg}
+
+## Overview
+
+In the previous chapter I discussed at length the case where there is only a single input variable $X$.  But what happens when there are multiple input variables.  The following data Looks at the sale prices of houses in King County, Washington between May 2014 to May 2015 based on three input variables (out of 20 input variables), the square footage of the lot, the grade given by the county (a higher grade indicates a better condition) and the number of bathrooms that the house has.  
+
+
+```{r,fig.align='center',  echo=FALSE,message=FALSE}
+kc_data <- read_csv("./data/kc_house_data.csv")
+kc_data2 <- kc_data %>% select(-c(id,zipcode,lat,long)) %>% filter(bedrooms<20,price<5*10^6,sqft_lot<10^5,sqft_lot15<10^5) %>% mutate(price =price/10^6)
+p1 <- kc_data2 %>% ggplot(aes(sqft_living,price)) + geom_point(color="blue") + labs(x="Square Feet",y="Sale price (Millions of Dollars)") + geom_smooth(method = "lm", se = FALSE,color="red")
+p2 <- kc_data2 %>% ggplot(aes(grade,price)) + geom_point(color="blue") + labs(x="Grade Given by King County",y="") + geom_smooth(method = "lm", se = FALSE,color="red") + coord_cartesian(ylim = c(0,6))
+p3 <- kc_data2 %>% ggplot(aes(bathrooms,price)) + geom_point(color="blue") + labs(x="Number of Bathrooms",y="") + geom_smooth(method = "lm", se = FALSE,color="red")
+grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+The graphs show a linear relationship between sale price and each of the three different input variables.  On way to model the sale price would be to develop three different simple linear regressions, one for each input variable.  However, if I develop three different simple linear regression models, by their very nature each one would be ignoring the other two input variables when making predictions.  This presents a problem when trying to determine a sale price based on multiple factors.  
+
+To solve this issue I can expand the simple linear regression model to include multiple input parameters as follows
+
+\begin{equation} 
+  Y = a_0 + a_1X_1 + a_2X_2 + a_3X_3 + \ldots + a_pX_p + \sigma
+  (\#eq:MultLinReg)
+\end{equation}
+
+Where $p$ is the total number of input parameters and $\sigma$ is the residual error. Each coefficient still represents the slope of the fit but on different axes.  This is more intuitive to visualize when working with just two input parameters.
+
+```{r,fig.align='center',  echo=FALSE,message=FALSE}
+fit <- lm(price~sqft_living+grade, data=kc_data2)
+plot_ly(kc_data2, x = ~sqft_living, y = ~grade, z = ~price, marker=list(color =~price, colorscale = c('#FFE1A1', '#683531'), showscale = FALSE))  %>%
+  add_markers() %>%
+  layout(scene = list(xaxis = list(title = 'Square Feet'),
+                     yaxis = list(title = 'Grade'),
+                     zaxis = list(title = 'Price')))
+```
+
+```{r,fig.align='center',  echo=FALSE,message=FALSE}
+fit <- lm(price~sqft_living+grade, data=kc_data2)
+plot_ly(kc_data2, x = ~sqft_living, y = ~grade, z = ~price, color = ~price, marker = list()) 
+  # layout(scene = list(xaxis = list(title = 'Square Feet'),
+  #                    yaxis = list(title = 'Grade'),
+  #                    zaxis = list(title = 'Price')))
+```
+
+```{r,fig.align='center',  echo=FALSE,message=FALSE}
+fit <- lm(price~sqft_living+grade, data=kc_data2)
+grade_full <-  c(seq(min(kc_data2$grade),max(kc_data2$grade),length.out = 100))
+newdata  <-  data.frame(sqft_living = c(seq(min(kc_data2$sqft_living),max(kc_data2$sqft_living),length.out = 100)),
+                     grade = rep(grade_full[1],100))
+prd <- predict(fit,newdata)
+prd_mat <- matrix(c(prd))
+for (i in 2:100){
+  newdata$grade <- grade_full[i] 
+  prd <- predict(fit,newdata)
+  prd_mat <- cbind(prd_mat,c(prd))  
+}
+
+plot_ly(kc_data2, x = ~sqft_living, y = ~grade, z = ~price, marker=list(color =~price, colorscale = c('blue', 'gold'), showscale = FALSE))  %>%
+  add_markers() %>%
+  # add_trace(x = newdata$sqft_living, y = grade_full, z= prd_mat, type='surface',schowscale=FALSE) %>% 
+  layout(scene = list(xaxis = list(title = 'Square Feet'),
+                     yaxis = list(title = 'Grade'),
+                     zaxis = list(title = 'Price')))
+```
+
+
+<!-- temp <- read_csv("./data/rollingsales_nyc.csv",na = "-") -->
+<!-- temp$TOTAL_UNITS <-  as.integer(temp$TOTAL_UNITS) -->
+<!-- temp$LAND_SQUARE_FEET <-  as.integer(temp$LAND_SQUARE_FEET) -->
+<!-- temp$GROSS_SQUARE_FEET <-  as.integer(temp$GROSS_SQUARE_FEET) -->
+<!-- temp$SALE_DATE <- mdy(temp$SALE_DATE) -->
+
+
+<!-- temp %>% ggplot(aes(TOTAL_UNITS,SALE_PRICE)) + geom_point() + labs(x="Total Units", y="Sale Price") -->
+<!-- temp %>% ggplot(aes(LAND_SQUARE_FEET,SALE_PRICE)) + geom_point() + labs(x="Land Square Feet", y="Sale Price") -->
+
+<!-- temp2 <- temp %>% mutate(SALE_PRICE=SALE_PRICE/10^6) %>% filter(LAND_SQUARE_FEET<2700, GROSS_SQUARE_FEET<15000,SALE_PRICE<15,YEAR_BUILT>1900) -->
+<!-- temp2 %>% ggplot(aes(TOTAL_UNITS,SALE_PRICE)) + geom_point() + labs(x="Total Units", y="Sale Price") -->
+<!-- temp2 %>% ggplot(aes(LAND_SQUARE_FEET,SALE_PRICE)) + geom_point() + labs(x="Land Square Feet", y="Sale Price") -->
+<!-- temp2 %>% ggplot(aes(GROSS_SQUARE_FEET,SALE_PRICE)) + geom_point() + labs(x="Gross Square Feet", y="Sale Price") -->
+<!-- temp2 %>% ggplot(aes(YEAR_BUILT,SALE_PRICE)) + geom_point() + labs(x="Year Built", y="Sale Price") -->
+<!-- temp2 %>% ggplot(aes(SALE_DATE,SALE_PRICE)) + geom_point() + labs(x="Sale Date", y="Sale Price") -->
+
+
+<!-- kc_data <- read_csv("./data/kc_house_data.csv") -->
+<!-- kc_data2 <- kc_data %>% select(-c(id,zipcode,lat,long)) %>% filter(bedrooms<20,price<5*10^6,sqft_lot<10^5,sqft_lot15<10^5) %>% mutate(price =price/10^3) -->
+<!-- kc_data2 %>% ggplot(aes(bedrooms,price)) + geom_point() -->
+
+<!-- kc_data2 %>% ggplot(aes(sqft_lot,price)) + geom_point() -->
+<!-- kc_data2 %>% ggplot(aes(floors,price)) + geom_point() -->
+<!-- kc_data2 %>% ggplot(aes(condition,price)) + geom_point() -->
+<!-- kc_data2 %>% ggplot(aes(sqft_above,price)) + geom_point() -->
+<!-- kc_data2 %>% ggplot(aes(sqft_basement,price)) + geom_point() -->
+<!-- kc_data2 %>% ggplot(aes(yr_built,price)) + geom_point() -->
+<!-- kc_data2 %>% ggplot(aes(yr_renovated,price)) + geom_point() -->
+<!-- kc_data2 %>% ggplot(aes(sqft_living15,price)) + geom_point() -->
+<!-- kc_data2 %>% ggplot(aes(sqft_lot15,price)) + geom_point() -->
+
+
+<!-- kc_data2 %>% ggplot(aes(sqft_living,price)) + geom_point() -->
+<!-- kc_data2 %>% ggplot(aes(bathrooms,price)) + geom_point() -->
+<!-- kc_data2 %>% ggplot(aes(grade,price)) + geom_point() -->
+
+<!-- fit <- lm(price~sqft_living+grade, data=kc_data2) -->
+<!-- summary(fit) -->
+<!-- fit2 <- lm(price~sqft_living, data=kc_data2) -->
+<!-- summary(fit2) -->
+<!-- fit3 <- lm(price~grade, data=kc_data2) -->
+<!-- summary(fit3) -->
+<!-- fit4 <- lm(price~bathrooms, data=kc_data2) -->
+<!-- summary(fit4) -->
+<!-- fit6 <- lm(price~yr_built, data=kc_data2) -->
+<!-- summary(fit6) -->
+<!-- fit5 <- lm(price~sqft_living+grade+yr_built, data=kc_data2) -->
+<!-- summary(fit5) -->
+
+<!-- fit <- lm(price~., data=kc_data2) -->
+<!-- summary(fit) -->
