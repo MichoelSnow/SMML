@@ -1,0 +1,14 @@
+```{r, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+library(tidyverse)
+library(lubridate)
+BlnkGrph = theme(axis.line=element_blank(), axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(), axis.title.x=element_blank(),
+                 axis.title.y=element_blank(), legend.position="none", panel.background=element_blank(), panel.border=element_blank(), panel.grid.major=element_blank(),
+                 panel.grid.minor=element_blank(), plot.background=element_blank(),plot.margin=grid::unit(c(0,0,0,0), "mm"))
+```
+
+# T-SNE {#tSNE}
+
+## Overview
+
+Given PCA and the other dimensionality reduction techniques already described, why do we need another one.  PCA is a great method when the data is linearly seperable and far apart. The linearity requirement of PCA was already discussed in the section on PCA, **NEED CHAPTER NAME**, but I want to discuss here, the second requirement of PCA, that the regions of interest be far apart.  
